@@ -4,8 +4,8 @@ name: Release
 # 仓库，所以把私仓 nt_helper 的源码用 PAT 浅克隆过来，在公开仓的 runner 上编译，
 # 不消耗私有仓的 3000 分钟 / 月。
 #
-# 日志对所有人可见 —— 源码本身不会被打印，但失败时 cargo 的输出里可能出现路径和
-# 少量代码片段。别往这里 echo 任何 secret。
+# 日志对所有人可见。私有源码的编译/测试输出只保留在临时 runner，不打印或上传；
+# 公开资产使用显式白名单，禁止源码、调试符号和诊断日志混入。
 
 on:
   workflow_dispatch:
@@ -14,6 +14,10 @@ on:
         description: nt_helper 的分支 / 标签 / commit
         required: false
         default: main
+      preflight_only:
+        description: 仅构建与验证，不创建或上传 Release
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -23,15 +27,29 @@ env:
   RELEASE_REPO: weq-devs/nt_helper_release
 
 jobs:
+  validate:
+    name: Validate public release contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node --test test/*.test.mjs
+
   # 先把源码 ref 解析成具体 commit，再开一个 draft release。五个 matrix job 都
   # 往这个 draft 上挂资产（跨 job 没有 artifact，也就没有那种"存一份中转、发完
   # 再删"的配额问题，更不会互相看见半成品）。
   prepare:
     name: Open draft release
+    needs: validate
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       source_sha: ${{ steps.tag.outputs.source_sha }}
+      build_timestamp: ${{ steps.tag.outputs.build_timestamp }}
     steps:
       # tag 里带构建日期与 commit 短 sha，方便 release 里回头查是谁编的。
       # 同一天对同一个 commit 重跑会撞 tag（比如上次构建抖动），撞了依次补
@@ -40,9 +58,11 @@ jobs:
         id: tag
         env:
           GH_TOKEN: ${{ secrets.NT_HELPER_TOKEN }}
+          SOURCE_REF: ${{ inputs.ref }}
+          PREFLIGHT_ONLY: ${{ inputs.preflight_only }}
         run: |
           set -euo pipefail
-          SOURCE_SHA=$(gh api "repos/$SOURCE_REPO/commits/${{ inputs.ref }}" --jq .sha)
+          SOURCE_SHA=$(gh api "repos/$SOURCE_REPO/commits/$SOURCE_REF" --jq .sha)
           echo "source sha: $SOURCE_SHA"
           BASE="nt-helper-$(date -u +%Y%m%d)-$(printf '%s' "$SOURCE_SHA" | cut -c1-7)"
           TAG="$BASE"
@@ -54,16 +74,23 @@ jobs:
           fi
           # draft 不会在发布仓里建出真正的 git tag（转正时才建），所以取消 / 失败
           # 的 run 不会留下一堆垃圾 tag，下面 cleanup 再把 draft release 收掉。
-          gh release create "$TAG" \
-            --repo "$RELEASE_REPO" \
-            --draft \
-            --title "nt_helper $TAG" \
-            --notes "nt_helper 原生产物自动发布（来源 $SOURCE_REPO@$SOURCE_SHA，run $GITHUB_RUN_ID）。产物由 matrix job 直接上传，全部到齐后转正。"
+          if [ "$PREFLIGHT_ONLY" != "true" ]; then
+            gh release create "$TAG" \
+              --repo "$RELEASE_REPO" \
+              --draft \
+              --title "nt_helper $TAG" \
+              --notes "nt_helper 原生产物自动发布（来源 $SOURCE_REPO@$SOURCE_SHA，run $GITHUB_RUN_ID）。产物由 matrix job 直接上传，全部到齐后转正。"
+          fi
           {
             echo "tag=$TAG"
             echo "source_sha=$SOURCE_SHA"
+            echo "build_timestamp=$(date +%s)"
           } >> "$GITHUB_OUTPUT"
-          echo "draft release: $TAG"
+          if [ "$PREFLIGHT_ONLY" = "true" ]; then
+            echo "preflight only: no Release created"
+          else
+            echo "draft release: $TAG"
+          fi
 
   build:
     name: Build Rust Binary
@@ -79,13 +106,13 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             asset: nt_helper-linux-x64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             asset: nt_helper-linux-arm64
-          - os: macos-latest
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             asset: nt_helper-darwin-x64
-          - os: macos-latest
+          - os: macos-15
             target: aarch64-apple-darwin
             asset: nt_helper-darwin-arm64
     runs-on: ${{ matrix.os }}
@@ -101,17 +128,30 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Checkout public release tools
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: .release-tools
+          persist-credentials: false
+
       # SQLCipher amalgamation 带了一处 WeQ 补丁（QQ 的 pending byte 与
       # 绝对锁字节解耦）。vendor 漂移会让 1GiB 修复悄悄消失，所以发版前
       # 在 linux-x64 这一份上校验一次即可。
       - name: Verify vendored SQLCipher patch
         if: matrix.os == 'ubuntu-latest' && matrix.target == 'x86_64-unknown-linux-gnu'
-        run: bash scripts/check-libsqlite3-sys-fork.sh
+        shell: bash
+        run: |
+          if ! bash scripts/check-libsqlite3-sys-fork.sh > "$RUNNER_TEMP/vendor-check.log" 2>&1; then
+            echo "::error::Vendored SQLCipher patch verification failed; private diagnostics are not published."
+            exit 1
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
+          architecture: ${{ startsWith(matrix.target, 'aarch64-') && 'arm64' || 'x64' }}
 
       - name: Install OpenSSL (Windows)
         if: runner.os == 'Windows'
@@ -125,14 +165,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            perl make flex bison curl ca-certificates
+            pkg-config perl make flex bison curl ca-certificates
 
       # 静态链接 libpcap（抓包模块）。发行版自带的 `libpcap.a` **不是 -fPIC**，
       # 链进 `-pie` 的 .node 会出现 relocation 错误；所以从源码构建一个禁掉
       # libnl/dbus/rdma/bluetooth/usb/netmap 等可选后端的最小静态库，再用
       # `LIBPCAP_LIBDIR` 让 pcap crate 静态链接（产物自包含，不依赖用户机器上的
-      # libpcap.so.*）。arm64 交叉用 aarch64-linux-gnu-gcc 同一份源码构建。
+      # libpcap.so.*）。x64 / arm64 均在原生 runner 构建，随后实际执行构建信息检查。
       - name: Build static libpcap (Linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -141,20 +180,14 @@ jobs:
           curl -fsSL https://www.tcpdump.org/release/libpcap-1.10.4.tar.gz -o /tmp/libpcap.tar.gz
           tar xzf /tmp/libpcap.tar.gz -C /tmp
           cd /tmp/libpcap-1.10.4
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            host_flag="--host=aarch64-linux-gnu"
-            cc="aarch64-linux-gnu-gcc"
-          else
-            host_flag=""
-            cc="gcc"
-          fi
-          ./configure $host_flag --disable-shared --without-libnl --disable-dbus \
+          ./configure --disable-shared --without-libnl --disable-dbus \
             --disable-rdma --disable-bluetooth --disable-usb --disable-netmap \
-            CC="$cc" CFLAGS=-fPIC
+            CC=gcc CFLAGS=-fPIC
           make -j"$(nproc)"
           mkdir -p "$GITHUB_WORKSPACE/.libpcap-static"
           cp libpcap.a "$GITHUB_WORKSPACE/.libpcap-static/"
           echo "LIBPCAP_LIBDIR=$GITHUB_WORKSPACE/.libpcap-static" >> "$GITHUB_ENV"
+          echo "LIBPCAP_VER=1.10.4" >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -170,21 +203,35 @@ jobs:
           # platform builds in this run share one key and any of the resulting
           # .dat sets can be read by every platform's nt_helper.node.
           DRESS_KEY_SEED: ${{ needs.prepare.outputs.source_sha }}
+          BUILD_TIMESTAMP: ${{ needs.prepare.outputs.build_timestamp }}
+          CARGO_BUILD_TARGET: ${{ matrix.target }}
+          AUTHORIZATION_OUTPUT_DIR: out
         run: |
-          # 注入当前秒级时间戳 (用于 30 天有效期检查)
-          export BUILD_TIMESTAMP=$(date +%s)
-          echo "Baking build timestamp: $BUILD_TIMESTAMP"
-
-          # Linux aarch64 交叉编译配置
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+          set -euo pipefail
+          # 不公开 cargo 的源码诊断片段，也不把这些日志作为 artifact 上传。
+          if ! npm run build -- --target "${{ matrix.target }}" > "$RUNNER_TEMP/native-build.log" 2>&1; then
+            echo "::error::Native addon build failed; private diagnostics are not published."
+            exit 1
+          fi
+          if ! node scripts/build-authorization-helper.mjs > "$RUNNER_TEMP/helper-build.log" 2>&1; then
+            echo "::error::Native helper build failed; no helper assets will be published."
+            exit 1
           fi
 
-          # 抓包模块静态链接 libpcap：LIBPCAP_LIBDIR 由上面的 Build static libpcap
-          # 步骤写入 GITHUB_ENV（x64 原生 / arm64 交叉各编一份带 -fPIC 的 .a）。
-
-          # 使用 NAPI-RS 官方 CLI 构建，它会自动处理 .node 后缀和命名
-          npm run build -- --target ${{ matrix.target }}
+      - name: Test restricted native helper
+        shell: bash
+        env:
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
+        run: |
+          set -euo pipefail
+          if ! cargo test --locked --target "${{ matrix.target }}" -p weq-authorization-helper -j 2 > "$RUNNER_TEMP/helper-tests.log" 2>&1; then
+            echo "::error::Native helper synthetic tests failed; private diagnostics are not published."
+            exit 1
+          fi
+          if ! node --test scripts/build-authorization-helper.test.mjs > "$RUNNER_TEMP/helper-cli-tests.log" 2>&1; then
+            echo "::error::Helper build-mode guards failed; private diagnostics are not published."
+            exit 1
+          fi
 
       - name: Stage binary
         shell: bash
@@ -194,19 +241,55 @@ jobs:
           shopt -s nullglob
           nodes=( *.node )
           echo "构建产出：${nodes[*]:-(无)}"
-          if [ ${#nodes[@]} -eq 0 ]; then
-            echo "::error::没找到构建产物 *.node"
+          if [ ${#nodes[@]} -ne 1 ]; then
+            echo "::error::构建必须恰好产出一个 *.node"
             exit 1
-          fi
-          if [ ${#nodes[@]} -gt 1 ]; then
-            echo "::warning::出现多个 .node，取第一个：${nodes[0]}"
           fi
           # napi 按 target 命名（nt_helper.<target>.node）；发布名与 WeQ 的
           # scripts/fetch-native.mjs 对齐，统一成 nt_helper-<platform>.node。
           cp "${nodes[0]}" "out/${{ matrix.asset }}.node"
           ls -lh out
 
+      - name: Verify native pair without elevation or QQ
+        shell: bash
+        run: |
+          platform="${{ matrix.asset }}"
+          node .release-tools/scripts/verify-platform.mjs out "${platform#nt_helper-}" "${{ needs.prepare.outputs.build_timestamp }}"
+
+      - name: Verify helper runtime dependencies (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          platform="${{ matrix.asset }}"
+          helper="out/weq-authorization-helper-${platform#nt_helper-}"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            dependencies=$(ldd "$helper")
+            if printf '%s\n' "$dependencies" | grep -Ei 'lib(pcap|ssl|crypto|sqlite|node)|electron'; then
+              echo "::error::Helper includes a forbidden non-system runtime dependency"
+              exit 1
+            fi
+          else
+            dependencies=$(otool -L "$helper" | tail -n +2 | awk '{print $1}')
+            if printf '%s\n' "$dependencies" | grep -Ev '^(/usr/lib/|/System/Library/)'; then
+              echo "::error::Helper dependency is outside macOS system libraries"
+              exit 1
+            fi
+          fi
+
+      - name: Verify helper runtime dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products '*' -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin is required for helper release verification' }
+          $dependencies = & $dumpbin /DEPENDENTS out/weq-authorization-helper-win32-x64.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect helper dependencies' }
+          if ($dependencies -match '(?i)(VCRUNTIME|MSVCP|libssl|libcrypto|sqlite|node\.dll|electron)') { throw 'Helper contains an unexpected runtime dependency' }
+
       - name: Upload binary to draft release
+        if: ${{ !inputs.preflight_only }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -215,12 +298,26 @@ jobs:
           set -euo pipefail
           gh release upload "$TAG" "out/${{ matrix.asset }}.node" \
             --repo "$RELEASE_REPO" --clobber
+          platform="${{ matrix.asset }}"
+          platform="${platform#nt_helper-}"
+          helper="out/weq-authorization-helper-$platform"
+          if [ "$RUNNER_OS" = "Windows" ]; then helper="$helper.exe"; fi
+          gh release upload "$TAG" "$helper" "out/authorization-$platform.json" \
+            --repo "$RELEASE_REPO" --clobber
           echo "uploaded ${{ matrix.asset }}.node to draft $TAG"
 
       # 装扮资源三个平台共用同一份（DRESS_KEY_SEED=源码 commit 派生同一个 AES key），
       # 只需要传一次 —— 早先每个平台各传一份，5 份里 4 份是纯浪费。
-      - name: Upload dress resources to draft release
+      - name: Verify dress resources
         if: matrix.dress
+        shell: bash
+        run: |
+          for part in bubble widget font; do
+            test -s "resources/dress/$part.dat" || exit 1
+          done
+
+      - name: Upload dress resources to draft release
+        if: ${{ matrix.dress && !inputs.preflight_only }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -245,10 +342,15 @@ jobs:
   publish:
     name: Publish to nt_helper_release
     needs: [prepare, build]
+    if: ${{ !inputs.preflight_only }}
     runs-on: ubuntu-latest
     steps:
       # 拿发布仓的 main，后面提交 latest.json 用。
       - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
 
       - name: Download draft assets
         env:
@@ -264,96 +366,8 @@ jobs:
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
           SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
-        run: |
-          set -euo pipefail
-          # 五个平台 + 装扮三件套都得在，缺一个就不能发：WeQ 的
-          # fetch-native.mjs 是按 manifest 整取，半套资产发出去比不发还糟。
-          #
-          # 构建 / 过期时间直接从刚下载的 .node 里问（getBuildInfo）—— 有效期只
-          # 在 Rust 里定义一处，这里不抄任何天数。五个平台同一 BUILD_TIMESTAMP，
-          # 问 linux-x64 这一份就够。
-          node -e '
-            const fs = require("node:fs");
-            const crypto = require("node:crypto");
-            const { createRequire } = require("node:module");
-            const sha = (f) =>
-              crypto.createHash("sha256").update(fs.readFileSync(`dist/${f}`)).digest("hex");
-            const size = (f) => fs.statSync(`dist/${f}`).size;
-            const iso = (sec) => (sec == null ? null : new Date(sec * 1000).toISOString());
-            let buildTime = null;
-            let expiresAt = null;
-            try {
-              const addon = createRequire(`${process.cwd()}/`)(
-                `${process.cwd()}/dist/nt_helper-linux-x64.node`,
-              );
-              const info = addon.getBuildInfo?.();
-              buildTime = iso(info?.buildTime ?? null);
-              expiresAt = iso(info?.expireTime ?? null);
-              console.log(`binary build info: buildTime=${buildTime} expiresAt=${expiresAt}`);
-            } catch (err) {
-              console.error(`::warning::读不到 .node 的构建信息（${err?.message ?? err}），manifest 不带过期时间`);
-            }
-            const platforms = {};
-            for (const p of ["win32-x64", "linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"]) {
-              const asset = `nt_helper-${p}.node`;
-              if (!fs.existsSync(`dist/${asset}`)) {
-                console.error(`缺资产 ${asset}`);
-                process.exit(1);
-              }
-              platforms[p] = { asset, sha256: sha(asset), size: size(asset) };
-            }
-            const dress = {};
-            for (const d of ["bubble", "widget", "font"]) {
-              const asset = `dress-${d}.dat`;
-              if (!fs.existsSync(`dist/${asset}`)) {
-                console.error(`缺资产 ${asset}`);
-                process.exit(1);
-              }
-              dress[d] = { asset, sha256: sha(asset), size: size(asset) };
-            }
-            const manifest = {
-              tag: process.env.TAG,
-              commit: process.env.SOURCE_SHA,
-              builtAt: new Date().toISOString(),
-              ...(buildTime ? { buildTime } : {}),
-              ...(expiresAt ? { expiresAt } : {}),
-              runId: process.env.GITHUB_RUN_ID,
-              source: `weq-devs/nt_helper@${process.env.SOURCE_SHA}`,
-              // 装扮资源的 AES key 由这个 seed 派生并烘焙进 .node
-              dressKeySeed: process.env.SOURCE_SHA,
-              platforms,
-              dress,
-            };
-            fs.writeFileSync("dist/manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
-            console.log(JSON.stringify(manifest.platforms, null, 2));
-          '
-
-          # 发出去之前再验一遍字段：少一个字段，WeQ 侧的 fetch-native.mjs 就直接废了
-          # （manifest 里没 tag 就没法拼资产 URL）。
-          node -e '
-            const m = JSON.parse(require("node:fs").readFileSync("dist/manifest.json", "utf8"));
-            const problems = [];
-            for (const k of ["tag", "commit", "builtAt", "platforms", "dress"]) {
-              if (!m[k]) problems.push(`缺字段 ${k}`);
-            }
-            if (!m.expiresAt) {
-              console.error("::warning::manifest 缺 expiresAt（构建信息没读出来），每日清理会回落到推导有效期");
-            }
-            for (const p of ["win32-x64", "linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"]) {
-              if (!m.platforms?.[p]?.sha256) problems.push(`平台 ${p} 缺 sha256`);
-            }
-            for (const d of ["bubble", "widget", "font"]) {
-              if (!m.dress?.[d]?.sha256) problems.push(`装扮资源 ${d} 缺 sha256`);
-            }
-            if (problems.length) {
-              console.error(`manifest 不合格：${problems.join("；")}`);
-              process.exit(1);
-            }
-            console.log(`manifest ok: ${m.tag} (${Object.keys(m.platforms).length} 平台 + ${Object.keys(m.dress).length} 装扮包)`);
-          '
-
-          (cd dist && sha256sum ./*.node ./*.dat manifest.json > SHA256SUMS && cat SHA256SUMS)
-          ls -lh dist
+          BUILD_TIMESTAMP: ${{ needs.prepare.outputs.build_timestamp }}
+        run: node scripts/stage-manifest.mjs dist
 
       - name: Upload manifest + SHA256SUMS
         env:
@@ -363,6 +377,10 @@ jobs:
           set -euo pipefail
           gh release upload "$TAG" dist/manifest.json dist/SHA256SUMS \
             --repo "$RELEASE_REPO" --clobber
+          # 片段只供 draft 汇总；最终只保留二进制与总清单，避免多余公开资产。
+          for platform in win32-x64 linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            gh release delete-asset "$TAG" "authorization-$platform.json" --repo "$RELEASE_REPO" --yes
+          done
 
       # 到这里资产已齐、manifest 已校验，把 draft 转正。draft 期间发布仓里没有
       # 真正的 tag，也不会被 WeQ 的 releases/latest 看到，所以上面任何一步挂了
@@ -377,6 +395,7 @@ jobs:
           nt_helper 原生产物的自动发布（来源 weq-devs/nt_helper）。
 
           - 5 个平台的 `nt_helper.node`
+          - 5 个平台的小型原生权限助手（不含 Node/Electron，需显式安装授权）
           - 装扮离线资源 `bubble/widget/font.dat`（AES key 由本次构建 commit 派生，只与同一 tag 的 `.node` 配套）
           - `manifest.json` / `SHA256SUMS`
 
@@ -423,7 +442,7 @@ jobs:
   cleanup-draft:
     name: Clean up draft on failure
     needs: [prepare, build, publish]
-    if: always() && needs.prepare.result == 'success' && needs.publish.result != 'success'
+    if: always() && !inputs.preflight_only && needs.prepare.result == 'success' && needs.publish.result != 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Delete draft release
