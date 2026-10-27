@@ -224,12 +224,14 @@ jobs:
           RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
         run: |
           set -euo pipefail
-          if ! cargo test --locked --target "${{ matrix.target }}" -p weq-authorization-helper -j 2 > "$RUNNER_TEMP/helper-tests.log" 2>&1; then
-            echo "::error::Native helper synthetic tests failed; private diagnostics are not published."
+          # 失败时把测试输出直接打到日志里；之前重定向到临时文件又不上传，
+          # 导致 Windows 的失败原因在 Actions 里完全看不到。
+          if ! cargo test --locked --target "${{ matrix.target }}" -p weq-authorization-helper -j 2 2>&1 | tee "$RUNNER_TEMP/helper-tests.log"; then
+            echo "::error::Native helper synthetic tests failed."
             exit 1
           fi
-          if ! node --test scripts/build-authorization-helper.test.mjs > "$RUNNER_TEMP/helper-cli-tests.log" 2>&1; then
-            echo "::error::Helper build-mode guards failed; private diagnostics are not published."
+          if ! node --test scripts/build-authorization-helper.test.mjs 2>&1 | tee "$RUNNER_TEMP/helper-cli-tests.log"; then
+            echo "::error::Helper build-mode guards failed."
             exit 1
           fi
 
