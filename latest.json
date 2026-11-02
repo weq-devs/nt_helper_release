@@ -1,43 +1,43 @@
 {
-  "tag": "nt-helper-20261029-550ce33",
-  "commit": "550ce33802882a0e1c5991c844af5b06d50595bb",
-  "builtAt": "2026-10-29T23:03:09.459Z",
-  "buildTime": "2026-10-29T22:46:05.000Z",
-  "expiresAt": "2026-11-28T22:46:05.000Z",
-  "runId": "40968297512",
-  "source": "weq-devs/nt_helper@550ce33802882a0e1c5991c844af5b06d50595bb",
-  "dressKeySeed": "550ce33802882a0e1c5991c844af5b06d50595bb",
+  "tag": "nt-helper-20261102-a202045",
+  "commit": "a2020457c4a87d9df42b91f3c802e6cd04a96710",
+  "builtAt": "2026-11-02T04:26:50.549Z",
+  "buildTime": "2026-11-02T04:08:50.000Z",
+  "expiresAt": "2026-12-02T04:08:50.000Z",
+  "runId": "41386793832",
+  "source": "weq-devs/nt_helper@a2020457c4a87d9df42b91f3c802e6cd04a96710",
+  "dressKeySeed": "a2020457c4a87d9df42b91f3c802e6cd04a96710",
   "platforms": {
     "win32-x64": {
       "asset": "nt_helper-win32-x64.node",
-      "sha256": "6f5debfff42f5f327e2d86b653414e05f9877a3498f28faf0865baa439074040",
-      "size": 13344256
+      "sha256": "47de7f0857820f28b6edb80da491479a6a49bfbfb106876cdf235459c3f11e1e",
+      "size": 13344768
     },
     "linux-x64": {
       "asset": "nt_helper-linux-x64.node",
-      "sha256": "fc67fe17526f446b85ca0b13645097040d9fcabacd05ce3fc052ccd1de314a46",
-      "size": 16342176
+      "sha256": "6ac13732b8bb70c023f1a2588a95164e2237faa11e80f02505db9d5df9331333",
+      "size": 16342752
     },
     "linux-arm64": {
       "asset": "nt_helper-linux-arm64.node",
-      "sha256": "b8848e9b30b7a396cf02259b0681a645eea275711dfdd6b2288109af36ad777d",
-      "size": 15923864
+      "sha256": "1a558751a872d922ad3b5a35477088ae83ed28840b77d2e699f16f51b6668450",
+      "size": 15923856
     },
     "darwin-x64": {
       "asset": "nt_helper-darwin-x64.node",
-      "sha256": "49d6c19ac7c40d0d377db97a5b6a81ae3db8db26b23fb1b26b2c5cc5da870466",
-      "size": 12848088
+      "sha256": "b28b25068db8c4a3ec28bb8925ea5d25b24e46253f6e4e0b8d3ed750373b1f4c",
+      "size": 12848056
     },
     "darwin-arm64": {
       "asset": "nt_helper-darwin-arm64.node",
-      "sha256": "b9f040d21e36761913422cb696adcbba11ea3ceb6dadd92f4635bde4dc35098a",
-      "size": 11910096
+      "sha256": "695d2c63116bb59d8be5ea91314f0fa26b32fa82d19d974a7fceec13a861a6bc",
+      "size": 11910176
     }
   },
   "authorization": {
     "win32-x64": {
       "asset": "weq-authorization-helper-win32-x64.exe",
-      "sha256": "6aeb5828a549d619e5c7691e148035f4473ddcabcda1e1fa24a9c6416ab5d054",
+      "sha256": "abc7f0ee80dbb5df01aca61d3c1ef0d54fdb0c58523fcf42d94fe66f3df22107",
       "size": 1259520,
       "protocol": 1,
       "target": "x86_64-pc-windows-msvc",
@@ -46,14 +46,14 @@
         "key-scan",
         "capture"
       ],
-      "buildTime": 1793313965,
-      "expireTime": 1795905965,
+      "buildTime": 1793592530,
+      "expireTime": 1796184530,
       "validitySecs": 2592000,
       "isDev": false
     },
     "linux-x64": {
       "asset": "weq-authorization-helper-linux-x64",
-      "sha256": "f2ee3079691fa7880f6fbed6fe9dce4eb2da3f948febb13234e3fdfbba2ff725",
+      "sha256": "266df3af3b6d9b91ea8a9aae4c514af5f16c1f142b18ff418fc923837869e2c4",
       "size": 1575664,
       "protocol": 1,
       "target": "x86_64-unknown-linux-gnu",
@@ -62,14 +62,14 @@
         "key-scan",
         "capture"
       ],
-      "buildTime": 1793313965,
-      "expireTime": 1795905965,
+      "buildTime": 1793592530,
+      "expireTime": 1796184530,
       "validitySecs": 2592000,
       "isDev": false
     },
     "linux-arm64": {
       "asset": "weq-authorization-helper-linux-arm64",
-      "sha256": "040acae9f6658acc8a608603f1356b23bbdc74ebaf8d517248adc09225b64d2f",
+      "sha256": "b2522f8f008cf20ecedd53e79509fdbe87f74dc5cebfb5e9751bd5dac4486c36",
       "size": 1517000,
       "protocol": 1,
       "target": "aarch64-unknown-linux-gnu",
@@ -78,14 +78,14 @@
         "key-scan",
         "capture"
       ],
-      "buildTime": 1793313965,
-      "expireTime": 1795905965,
+      "buildTime": 1793592530,
+      "expireTime": 1796184530,
       "validitySecs": 2592000,
       "isDev": false
     },
     "darwin-x64": {
       "asset": "weq-authorization-helper-darwin-x64",
-      "sha256": "1d55fc6c4ec89e7f2cd51cc31a24275e235e5ed9ed837847d84a4f27c00e75aa",
+      "sha256": "d18bf4476947382d84d9c3ea1f624571d17c220e688254d4c3adf146d23111e6",
       "size": 1100232,
       "protocol": 1,
       "target": "x86_64-apple-darwin",
@@ -94,14 +94,14 @@
         "key-scan",
         "capture"
       ],
-      "buildTime": 1793313965,
-      "expireTime": 1795905965,
+      "buildTime": 1793592530,
+      "expireTime": 1796184530,
       "validitySecs": 2592000,
       "isDev": false
     },
     "darwin-arm64": {
       "asset": "weq-authorization-helper-darwin-arm64",
-      "sha256": "86010480da61b51d23394d198d27bdf5f711dfbab3df0eb69351913487176ed6",
+      "sha256": "c0b688a938938802e07d198d33a72e1174a65cf08131e1f203a5e107a3ca2e5b",
       "size": 1071616,
       "protocol": 1,
       "target": "aarch64-apple-darwin",
@@ -110,8 +110,8 @@
         "key-scan",
         "capture"
       ],
-      "buildTime": 1793313965,
-      "expireTime": 1795905965,
+      "buildTime": 1793592530,
+      "expireTime": 1796184530,
       "validitySecs": 2592000,
       "isDev": false
     }
@@ -119,18 +119,18 @@
   "dress": {
     "bubble": {
       "asset": "dress-bubble.dat",
-      "sha256": "505265bfce14f242003c43cd31c48224e1394180af8934feea858531ddb59b14",
-      "size": 25468597
+      "sha256": "28b344a4b434276fbd4ab5eccf97955b4c1cdf2e543901d5145a29a3717a9a48",
+      "size": 25523557
     },
     "widget": {
       "asset": "dress-widget.dat",
-      "sha256": "44aa8d9c38b7220a9a1a6c5a538f12a5ab7c4c7b7d4c55b275868558db66c81c",
-      "size": 13181477
+      "sha256": "2ba583f0cffb6d56f0a7e12b1a892046b66f7c3765e2c9bd82d532106fd43e81",
+      "size": 13221573
     },
     "font": {
       "asset": "dress-font.dat",
-      "sha256": "17ae1d271d52f1bb1d3d50f3e9406402e4e26324d33bf0333d9660b23d7be248",
-      "size": 2224837
+      "sha256": "54e42ae0385339f05d481a8e7eabbb37338a5d340052454a3fb9e1c7a9d99ae2",
+      "size": 2226773
     }
   }
 }
