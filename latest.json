@@ -1,117 +1,117 @@
 {
-  "tag": "nt-helper-20261108-b52eb91",
-  "commit": "b52eb9196d756da8df067cf788445c77e4459130",
-  "builtAt": "2026-11-08T12:46:58.963Z",
-  "buildTime": "2026-11-08T12:26:02.000Z",
-  "expiresAt": "2026-12-08T12:26:02.000Z",
-  "runId": "42477450919",
-  "source": "weq-devs/nt_helper@b52eb9196d756da8df067cf788445c77e4459130",
-  "dressKeySeed": "b52eb9196d756da8df067cf788445c77e4459130",
+  "tag": "nt-helper-20261108-be9e6bc",
+  "commit": "be9e6bc9a256a9ca72c1f8b54576ff326f6ba201",
+  "builtAt": "2026-11-08T18:08:16.136Z",
+  "buildTime": "2026-11-08T17:50:43.000Z",
+  "expiresAt": "2026-12-08T17:50:43.000Z",
+  "runId": "42506955841",
+  "source": "weq-devs/nt_helper@be9e6bc9a256a9ca72c1f8b54576ff326f6ba201",
+  "dressKeySeed": "be9e6bc9a256a9ca72c1f8b54576ff326f6ba201",
   "platforms": {
     "win32-x64": {
       "asset": "nt_helper-win32-x64.node",
-      "sha256": "686bb31ee6d842bd5e1f77ae4750f12891225aa32276634a00dab54efbac8f23",
+      "sha256": "8f95c131f87f59222092931d08f50b818c53209c797ac9964ad379e43d03e409",
       "size": 13574144
     },
     "linux-x64": {
       "asset": "nt_helper-linux-x64.node",
-      "sha256": "568a65beaa576fb625a7f27036f80839f0790d45b4d7e213c95b8178630f4e7e",
-      "size": 16543528
+      "sha256": "894b008feebf33da9884dae1107447d7568f7f95fc2d3e9abc99dffd7758e678",
+      "size": 16543448
     },
     "linux-arm64": {
       "asset": "nt_helper-linux-arm64.node",
-      "sha256": "38d0161a6ac051e4b6274955422630dc996f310e412ad8b844e519fa8b67a179",
-      "size": 16099024
+      "sha256": "3d11c65871d8b00f65debc7d4032fef50eaad22acaeb4155f5d8b030b694f7d3",
+      "size": 16165352
     },
     "darwin-x64": {
       "asset": "nt_helper-darwin-x64.node",
-      "sha256": "9b7e3b8f887cc7686380c592ed9c4c96248668475fbaf61a8d1e012caf28414d",
+      "sha256": "3a555bc3cd4a00139181855ab41cac9916d972c6427a8c2386bf4c9602921d01",
       "size": 13045896
     },
     "darwin-arm64": {
       "asset": "nt_helper-darwin-arm64.node",
-      "sha256": "44f6c5758224f4ed99f1a63779e8d3337fc75a5252a315631bac9f768838e57e",
-      "size": 12092608
+      "sha256": "b38b795e20730c39047fdd3b108d917fe88abe3b9c286a9125fc34b5e201baac",
+      "size": 12092512
     }
   },
   "authorization": {
     "win32-x64": {
       "asset": "weq-authorization-helper-win32-x64.exe",
-      "sha256": "0c5f1ee9f7d549602d238278af776b8da70efba9c715f09eb4281aaa7807fdb6",
-      "size": 1273344,
-      "protocol": 1,
+      "sha256": "fdc9e364bd9c1b15276203997f530a344d951c254ef97d371996910d5ee199e5",
+      "size": 1290240,
+      "protocol": 2,
       "target": "x86_64-pc-windows-msvc",
       "capabilities": [
         "attach",
         "key-scan",
         "capture"
       ],
-      "buildTime": 1794140762,
-      "expireTime": 1796732762,
+      "buildTime": 1794160243,
+      "expireTime": 1796752243,
       "validitySecs": 2592000,
       "isDev": false
     },
     "linux-x64": {
       "asset": "weq-authorization-helper-linux-x64",
-      "sha256": "0a5f13df67ee84556547a1bb569a336147c7c1f0ab5db7fb0175c453d9a541e9",
-      "size": 1587792,
-      "protocol": 1,
+      "sha256": "aa89e05e42072b026c1ba3e188708ebcec7220ebf77c3a2eaa752ed708d48e04",
+      "size": 1602160,
+      "protocol": 2,
       "target": "x86_64-unknown-linux-gnu",
       "capabilities": [
         "attach",
         "key-scan",
         "capture"
       ],
-      "buildTime": 1794140762,
-      "expireTime": 1796732762,
+      "buildTime": 1794160243,
+      "expireTime": 1796752243,
       "validitySecs": 2592000,
       "isDev": false
     },
     "linux-arm64": {
       "asset": "weq-authorization-helper-linux-arm64",
-      "sha256": "4dbe399b1f0286d74975ee5ae13bdc358b2f9b5d10824bf2e62b7a172b9956ec",
+      "sha256": "b43608db53dab142ed4f5e4fb7e93255b19ebb236593e1b026163873b9fa2ad0",
       "size": 1517000,
-      "protocol": 1,
+      "protocol": 2,
       "target": "aarch64-unknown-linux-gnu",
       "capabilities": [
         "attach",
         "key-scan",
         "capture"
       ],
-      "buildTime": 1794140762,
-      "expireTime": 1796732762,
+      "buildTime": 1794160243,
+      "expireTime": 1796752243,
       "validitySecs": 2592000,
       "isDev": false
     },
     "darwin-x64": {
       "asset": "weq-authorization-helper-darwin-x64",
-      "sha256": "a73ccb93ce6595d5677f440d37ce046be3fae9aef2e351fac9587f4b0c713982",
-      "size": 1112544,
-      "protocol": 1,
+      "sha256": "367742ba63f20862d63da48266e7368064606520101ab1e34c142fc456ccc679",
+      "size": 1128944,
+      "protocol": 2,
       "target": "x86_64-apple-darwin",
       "capabilities": [
         "attach",
         "key-scan",
         "capture"
       ],
-      "buildTime": 1794140762,
-      "expireTime": 1796732762,
+      "buildTime": 1794160243,
+      "expireTime": 1796752243,
       "validitySecs": 2592000,
       "isDev": false
     },
     "darwin-arm64": {
       "asset": "weq-authorization-helper-darwin-arm64",
-      "sha256": "e189a3b5bbafa1556eef638b4da61db56cd01aa193aa98022ce86263c7644138",
-      "size": 1088160,
-      "protocol": 1,
+      "sha256": "c7f4ab302607c8798ebf815aa4b17d6e7656de30de5cb8ac751e73d8803f450a",
+      "size": 1104688,
+      "protocol": 2,
       "target": "aarch64-apple-darwin",
       "capabilities": [
         "attach",
         "key-scan",
         "capture"
       ],
-      "buildTime": 1794140762,
-      "expireTime": 1796732762,
+      "buildTime": 1794160243,
+      "expireTime": 1796752243,
       "validitySecs": 2592000,
       "isDev": false
     }
@@ -119,18 +119,18 @@
   "dress": {
     "bubble": {
       "asset": "dress-bubble.dat",
-      "sha256": "04fea0c97c1026dad50c2ff231716630e3e4100dc1334805acb2b16059b8e376",
-      "size": 25583685
+      "sha256": "feb54c69fba67844bd2dedda0683a4215dbc8b4a87081405a54654e585d6233b",
+      "size": 25634101
     },
     "widget": {
       "asset": "dress-widget.dat",
-      "sha256": "8f1fa2de20c887fc65e0cf01d5d56f9b04bbce9620134c87d03167da2dcfc78a",
-      "size": 13267157
+      "sha256": "72fbd5cd46a6a6307f3db302a67f8282538c8a1438298db832143cfcb7e23a4d",
+      "size": 13301205
     },
     "font": {
       "asset": "dress-font.dat",
-      "sha256": "1f07ef4778e31022df44d362aa5dc5d84e677161262b111a6ff05062236b6e0c",
-      "size": 2227861
+      "sha256": "59f3c13c83af04bbf5cf30f1c67c0b05240d95d49d955edb2e3ed102d148d607",
+      "size": 2229493
     }
   }
 }
