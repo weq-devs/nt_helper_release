@@ -22,7 +22,8 @@ export function validateBuildInfo(info, timestamp, target, now = Date.now() / 10
     info.expireTime <= now ||
     (target &&
       (info.target !== target ||
-        info.protocol !== 1 ||
+        !Number.isSafeInteger(info.protocol) ||
+        info.protocol < 1 ||
         !['attach', 'key-scan', 'capture'].every((name) => info.capabilities?.includes(name))))
   )
     throw new Error('原生构建的目标、协议或有效性信息不符合发布契约');
