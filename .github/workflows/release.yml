@@ -439,28 +439,22 @@ jobs:
             git push
           fi
 
-  # 构建 / 发布挂了就把草稿收掉，别让半成品在发布仓里越堆越多。草稿转正后
-  # （publish 成功）这里不会跑。
+  # 构建 / 发布挂了只清理实际仍是草稿的 Release。正式发布后 latest.json
+  # 推送仍可能失败，不能根据整个 publish job 的结果判断是否可以删除。
   cleanup-draft:
     name: Clean up draft on failure
     needs: [prepare, build, publish]
     if: always() && !inputs.preflight_only && needs.prepare.result == 'success' && needs.publish.result != 'success'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
       - name: Delete draft release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
-        run: |
-          set -uo pipefail
-          # 草稿没有 git tag，`--cleanup-tag` 会在删完 release 后因为"tag 不存在"
-          # 报 422 —— 命令返回值不可信，直接用"还查不查得到"来判定是否删干净。
-          gh release delete "$TAG" --repo "$RELEASE_REPO" --yes --cleanup-tag >/dev/null 2>&1 || true
-          if gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
-            gh release delete "$TAG" --repo "$RELEASE_REPO" --yes >/dev/null 2>&1 || true
-          fi
-          if gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
-            echo "::warning::草稿 $TAG 没能自动清掉，去发布仓手动删一下"
-          else
-            echo "deleted draft $TAG"
-          fi
+        run: node scripts/cleanup-draft.mjs
