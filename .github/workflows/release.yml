@@ -40,8 +40,7 @@ jobs:
       - run: node --test test/*.test.mjs
 
   # 先把源码 ref 解析成具体 commit，再开一个 draft release。五个 matrix job 都
-  # 往这个 draft 上挂资产（跨 job 没有 artifact，也就没有那种"存一份中转、发完
-  # 再删"的配额问题，更不会互相看见半成品）。
+  # 往这个 draft 上挂最终资产。加密索引通过一个短期 artifact 共享，构建后清理。
   prepare:
     name: Open draft release
     needs: validate
@@ -92,9 +91,63 @@ jobs:
             echo "draft release: $TAG"
           fi
 
+  dress:
+    name: Pack encrypted dress indexes once
+    needs: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_id: ${{ steps.shared.outputs.artifact-id }}
+    steps:
+      - name: Checkout nt_helper (private source)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          token: ${{ secrets.NT_HELPER_TOKEN }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Checkout public release tools
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: .release-tools
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Pack and verify shared encrypted indexes
+        env:
+          DRESS_KEY_SEED: ${{ needs.prepare.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if ! cargo test --locked -p nt-helper-dress-pack -j 2 > "$RUNNER_TEMP/dress-tests.log" 2>&1; then
+            echo "::error::Private dress packer tests failed; diagnostics are not published."
+            exit 1
+          fi
+          if ! cargo run --locked --release -p nt-helper-dress-pack -j 2 -- resources/dress .dress-shared > "$RUNNER_TEMP/dress-pack.log" 2>&1; then
+            echo "::error::Dress packing failed; private diagnostics are not published."
+            exit 1
+          fi
+          node .release-tools/scripts/verify-dress.mjs .dress-shared "$DRESS_KEY_SEED"
+      - name: Share only encrypted indexes and provenance
+        id: shared
+        uses: actions/upload-artifact@v4
+        with:
+          name: dress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .dress-shared/bubble.dat
+            .dress-shared/font.dat
+            .dress-shared/widget.dat
+            .dress-shared/dress-build.json
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
   build:
     name: Build Rust Binary
-    needs: prepare
+    needs: [prepare, dress]
     strategy:
       fail-fast: false
       matrix:
@@ -134,6 +187,13 @@ jobs:
           ref: ${{ github.sha }}
           path: .release-tools
           persist-credentials: false
+
+      - name: Download shared encrypted indexes from this attempt
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.dress.outputs.artifact_id }}
+          path: .dress-shared
+          merge-multiple: true
 
       # SQLCipher amalgamation 带了一处 WeQ 补丁（QQ 的 pending byte 与
       # 绝对锁字节解耦）。vendor 漂移会让 1GiB 修复悄悄消失，所以发版前
@@ -199,10 +259,9 @@ jobs:
       - name: Build Release
         shell: bash
         env:
-          # Derive the dress bundle AES key from the source commit, so all five
-          # platform builds in this run share one key and any of the resulting
-          # .dat sets can be read by every platform's nt_helper.node.
+          # 仅嵌入同一 commit 派生的密钥；资源已由 dress job 加工一次。
           DRESS_KEY_SEED: ${{ needs.prepare.outputs.source_sha }}
+          NT_HELPER_PACK_DRESS: '0'
           BUILD_TIMESTAMP: ${{ needs.prepare.outputs.build_timestamp }}
           CARGO_BUILD_TARGET: ${{ matrix.target }}
           AUTHORIZATION_OUTPUT_DIR: out
@@ -258,6 +317,12 @@ jobs:
           platform="${{ matrix.asset }}"
           node .release-tools/scripts/verify-platform.mjs out "${platform#nt_helper-}" "${{ needs.prepare.outputs.build_timestamp }}"
 
+      - name: Verify addon reads the shared encrypted indexes
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        run: node .release-tools/scripts/verify-dress.mjs .dress-shared "$SOURCE_SHA" "out/${{ matrix.asset }}.node"
+
       - name: Verify helper runtime dependencies (Unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -308,16 +373,6 @@ jobs:
             --repo "$RELEASE_REPO" --clobber
           echo "uploaded ${{ matrix.asset }}.node to draft $TAG"
 
-      # 装扮资源三个平台共用同一份（DRESS_KEY_SEED=源码 commit 派生同一个 AES key），
-      # 只需要传一次 —— 早先每个平台各传一份，5 份里 4 份是纯浪费。
-      - name: Verify dress resources
-        if: matrix.dress
-        shell: bash
-        run: |
-          for part in bubble widget font; do
-            test -s "resources/dress/$part.dat" || exit 1
-          done
-
       - name: Upload dress resources to draft release
         if: ${{ matrix.dress && !inputs.preflight_only }}
         shell: bash
@@ -328,7 +383,7 @@ jobs:
           set -euo pipefail
           args=()
           for part in bubble widget font; do
-            src="resources/dress/$part.dat"
+            src=".dress-shared/$part.dat"
             if [ ! -f "$src" ]; then
               echo "::error::装扮资源缺失：$src"
               exit 1
@@ -343,7 +398,7 @@ jobs:
   # 补上 manifest.json / SHA256SUMS，然后把 draft 转正、更新 latest.json。
   publish:
     name: Publish to nt_helper_release
-    needs: [prepare, build]
+    needs: [prepare, dress, build]
     if: ${{ !inputs.preflight_only }}
     runs-on: ubuntu-latest
     steps:
@@ -354,6 +409,13 @@ jobs:
         with:
           node-version: 22
 
+      - name: Download shared encrypted indexes from this attempt
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.dress.outputs.artifact_id }}
+          path: .dress-shared
+          merge-multiple: true
+
       - name: Download draft assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -363,6 +425,15 @@ jobs:
           mkdir -p dist
           gh release download "$TAG" --repo "$RELEASE_REPO" --dir dist --clobber
           ls -lh dist
+
+      - name: Match draft indexes to the verified shared set
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        run: |
+          node scripts/verify-dress.mjs .dress-shared "$SOURCE_SHA"
+          for part in bubble font widget; do
+            cmp ".dress-shared/$part.dat" "dist/dress-$part.dat"
+          done
 
       - name: Stage manifest + SHA256SUMS
         env:
@@ -438,6 +509,20 @@ jobs:
               commit -q -m "chore: publish $TAG"
             git push
           fi
+
+  cleanup-shared:
+    name: Remove temporary encrypted indexes
+    needs: [dress, build, publish]
+    if: always() && needs.dress.outputs.artifact_id != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete only this run's shared artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.dress.outputs.artifact_id }}
+        run: gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID"
 
   # 构建 / 发布挂了只清理实际仍是草稿的 Release。正式发布后 latest.json
   # 推送仍可能失败，不能根据整个 publish job 的结果判断是否可以删除。
