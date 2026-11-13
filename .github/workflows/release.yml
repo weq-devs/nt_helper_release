@@ -311,6 +311,24 @@ jobs:
           cp "${nodes[0]}" "out/${{ matrix.asset }}.node"
           ls -lh out
 
+      - name: Build and test QQ sync runtime
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! node qq-sync/tools/build-native.mjs > "$RUNNER_TEMP/qq-sync-build.log" 2>&1; then
+            echo "::error::QQ sync helper build failed; private diagnostics are not published."
+            exit 1
+          fi
+          if ! node qq-sync/tools/test.mjs > "$RUNNER_TEMP/qq-sync-tests.log" 2>&1; then
+            echo "::error::QQ sync synthetic tests failed; private diagnostics are not published."
+            exit 1
+          fi
+          if ! node qq-sync/tools/package-runtime.mjs out > "$RUNNER_TEMP/qq-sync-package.log" 2>&1; then
+            echo "::error::QQ sync runtime staging failed."
+            exit 1
+          fi
+
       - name: Verify native pair without elevation or QQ
         shell: bash
         run: |
@@ -372,6 +390,11 @@ jobs:
           gh release upload "$TAG" "$helper" "out/authorization-$platform.json" \
             --repo "$RELEASE_REPO" --clobber
           echo "uploaded ${{ matrix.asset }}.node to draft $TAG"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            gh release upload "$TAG" out/qq-sync-win32-x64.json out/qq-sync-runtime-win32-x64.mjs \
+              out/qq-sync-current.json out/WeQ.QqSyncHost.exe out/WeQ.QqSyncProbe.dll \
+              --repo "$RELEASE_REPO" --clobber
+          fi
 
       - name: Upload dress resources to draft release
         if: ${{ matrix.dress && !inputs.preflight_only }}
@@ -469,6 +492,7 @@ jobs:
 
           - 5 个平台的 `nt_helper.node`
           - 5 个平台的小型原生权限助手（不含 Node/Electron，需显式安装授权）
+          - Windows x64 QQ 本机同步运行产物（宿主模块与 EXE/DLL，不含私仓源码及调试符号）
           - 装扮离线资源 `bubble/widget/font.dat`（AES key 由本次构建 commit 派生，只与同一 tag 的 `.node` 配套）
           - `manifest.json` / `SHA256SUMS`
 
