@@ -353,7 +353,12 @@ jobs:
           if (-not $dumpbin) { throw 'dumpbin is required for helper release verification' }
           $dependencies = & $dumpbin /DEPENDENTS out/weq-authorization-helper-win32-x64.exe
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect helper dependencies' }
-          if ($dependencies -match '(?i)(VCRUNTIME|MSVCP|libssl|libcrypto|sqlite|node\.dll|electron)') { throw 'Helper contains an unexpected runtime dependency' }
+          $dependencies | node .release-tools/scripts/check-windows-imports.mjs helper
+          if ($LASTEXITCODE -ne 0) { throw 'Helper import contract failed' }
+          $dependencies = & $dumpbin /DEPENDENTS out/nt_helper-win32-x64.node
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect addon dependencies' }
+          $dependencies | node .release-tools/scripts/check-windows-imports.mjs addon
+          if ($LASTEXITCODE -ne 0) { throw 'Addon import contract failed' }
 
       - name: Upload binary to draft release
         if: ${{ !inputs.preflight_only }}
