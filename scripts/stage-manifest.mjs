@@ -63,6 +63,47 @@ export async function stageManifest({ directory, tag, commit, timestamp, addonIn
     };
   }
   for (const part of ['bubble', 'widget', 'font']) dress[part] = await add(`dress-${part}.dat`);
+  const syncAsset = 'qq-sync-win32-x64.json';
+  const sync = JSON.parse(await readFile(join(directory, syncAsset), 'utf8'));
+  if (
+    sync.protocol !== 1 ||
+    !/^[a-f0-9]{16}$/.test(sync.buildId) ||
+    Object.keys(sync).sort().join() !== 'buildId,files,protocol'
+  )
+    throw new Error('QQ 同步组件分发协议不匹配');
+  const syncPaths = {
+    'runtime.mjs': 'qq-sync-runtime-win32-x64.mjs',
+    'generated/windows/QqSync/current.json': 'qq-sync-current.json',
+    [`generated/windows/QqSync/${sync.buildId}/WeQ.QqSyncHost.exe`]: 'WeQ.QqSyncHost.exe',
+    [`generated/windows/QqSync/${sync.buildId}/WeQ.QqSyncProbe.dll`]: 'WeQ.QqSyncProbe.dll',
+  };
+  if (
+    Object.keys(sync.files ?? {})
+      .sort()
+      .join() !== Object.keys(syncPaths).sort().join()
+  )
+    throw new Error('QQ 同步组件文件不在发布白名单');
+  const syncFiles = {};
+  for (const [path, asset] of Object.entries(syncPaths)) {
+    const claimed = sync.files[path];
+    const actual = await add(asset);
+    if (
+      Object.keys(claimed).sort().join() !== 'asset,sha256,size' ||
+      claimed.asset !== actual.asset ||
+      claimed.sha256 !== actual.sha256 ||
+      claimed.size !== actual.size
+    )
+      throw new Error('QQ 同步组件内容不匹配');
+    syncFiles[path] = actual;
+  }
+  const qqSync = {
+    'win32-x64': {
+      protocol: 1,
+      buildId: sync.buildId,
+      files: syncFiles,
+      ...(await add(syncAsset)),
+    },
+  };
   for (const file of await readdir(directory))
     if (!allowed.has(file) || !(await lstat(join(directory, file))).isFile())
       throw new Error(`拒绝发布非白名单文件或链接：${file}`);
@@ -77,6 +118,7 @@ export async function stageManifest({ directory, tag, commit, timestamp, addonIn
     dressKeySeed: commit,
     platforms,
     authorization,
+    qqSync,
     dress,
   };
   const serialized = `${JSON.stringify(manifest, null, 2)}\n`;

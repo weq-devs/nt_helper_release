@@ -42,6 +42,26 @@ async function fixture(t) {
   }
   for (const part of ['bubble', 'widget', 'font'])
     await writeFile(join(directory, `dress-${part}.dat`), 'synthetic');
+  const buildId = '1234567890abcdef';
+  const syncFiles = {};
+  for (const [path, asset] of Object.entries({
+    'runtime.mjs': 'qq-sync-runtime-win32-x64.mjs',
+    'generated/windows/QqSync/current.json': 'qq-sync-current.json',
+    [`generated/windows/QqSync/${buildId}/WeQ.QqSyncHost.exe`]: 'WeQ.QqSyncHost.exe',
+    [`generated/windows/QqSync/${buildId}/WeQ.QqSyncProbe.dll`]: 'WeQ.QqSyncProbe.dll',
+  })) {
+    const bytes = Buffer.from(`synthetic-${asset}`);
+    await writeFile(join(directory, asset), bytes);
+    syncFiles[path] = {
+      asset,
+      size: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    };
+  }
+  await writeFile(
+    join(directory, 'qq-sync-win32-x64.json'),
+    JSON.stringify({ protocol: 1, buildId, files: syncFiles }),
+  );
   return {
     directory,
     tag: 'nt-helper-fixture',
@@ -59,7 +79,8 @@ test('五平台同源资产合并，摘要覆盖最终资产且不透传任意�
   assert.equal(Object.keys(manifest.authorization).length, Object.keys(PLATFORMS).length);
   assert.equal(JSON.stringify(manifest).includes('privateExtra'), false);
   const sums = await readFile(join(options.directory, 'SHA256SUMS'), 'utf8');
-  assert.equal(sums.trim().split('\n').length, 14);
+  assert.equal(sums.trim().split('\n').length, 19);
+  assert.equal(manifest.qqSync['win32-x64'].protocol, 1);
   assert.equal(sums.includes('authorization-'), true);
   assert.equal(sums.includes('.json\n'), true);
   assert.equal(sums.includes('authorization-win32-x64.json'), false);
@@ -73,6 +94,8 @@ for (const scenario of [
   'expired',
   'private-file',
   'symlink',
+  'sync-tampered',
+  'sync-private-field',
 ])
   test(`不发布不完整、不同源或越界资产：${scenario}`, async (t) => {
     const options = await fixture(t);
@@ -81,6 +104,14 @@ for (const scenario of [
     if (scenario === 'expired') options.now = options.addonInfo.expireTime + 1;
     if (scenario === 'missing') await rm(helper);
     if (scenario === 'tampered') await writeFile(helper, 'changed');
+    if (scenario === 'sync-tampered')
+      await writeFile(join(options.directory, 'WeQ.QqSyncProbe.dll'), 'changed');
+    if (scenario === 'sync-private-field') {
+      const file = join(options.directory, 'qq-sync-win32-x64.json');
+      const bundle = JSON.parse(await readFile(file, 'utf8'));
+      bundle.privateExtra = 'must not publish';
+      await writeFile(file, JSON.stringify(bundle));
+    }
     if (scenario === 'private-file')
       await writeFile(join(options.directory, 'private-source.rs'), 'synthetic');
     if (scenario === 'symlink') {
