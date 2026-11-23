@@ -1,7 +1,8 @@
-import { createDecipheriv, createHash } from 'node:crypto';
-import { lstat, readFile, readdir } from 'node:fs/promises';
-import { brotliDecompressSync } from 'node:zlib';
-import { resolve } from 'node:path';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { lstat, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
@@ -76,7 +77,34 @@ function firstRecord(raw) {
   return { itemId: String(fields[1]), name: fields[2], url: host + fields[3], size: fields[4] };
 }
 
-export async function verifyDress(directory, commit, addon) {
+async function verifyV2Read(addon, records, key) {
+  const directory = await mkdtemp(join(tmpdir(), 'weq-native-dress-v2-'));
+  const id = createHash('sha256').update(key).digest().subarray(0, 16);
+  const header = Buffer.concat([Buffer.from('NTDR\x02'), id]);
+  try {
+    for (const [part, raw] of records) {
+      const nonce = randomBytes(12);
+      const aad = Buffer.concat([header, Buffer.from(part)]);
+      const cipher = createCipheriv('aes-256-gcm', key, nonce).setAAD(aad);
+      await writeFile(join(directory, `${part}.dat`), Buffer.concat([
+        header, nonce, cipher.update(brotliCompressSync(raw)), cipher.final(), cipher.getAuthTag(),
+      ]));
+    }
+    if (!(await addon.validateDressResourceIndexes?.(directory, id.toString('hex'))) ||
+        !(await addon.reloadDressResourceIndexes?.(directory, id.toString('hex'))))
+      throw new Error('Addon cannot activate encrypted v2 indexes');
+    for (const [part, raw] of records) {
+      const probe = firstRecord(raw);
+      const result = addon.queryDressResourceUrl(part, probe.itemId, probe.name);
+      if (result?.url !== probe.url || result.size !== probe.size)
+        throw new Error('Addon cannot query encrypted v2 indexes');
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+export async function verifyDress(directory, commit, addon, keyConfig = process.env.WEQ_DRESS_KEYS) {
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Expected full source commit');
   const expected = ['dress-build.json', ...parts.map((part) => `${part}.dat`)].sort();
   const actual = (await readdir(directory)).sort();
@@ -94,6 +122,19 @@ export async function verifyDress(directory, commit, addon) {
   )
     throw new Error('Dress artifact source or format mismatch');
   const key = createHash('sha256').update(`nt_helper-dress-v1:${commit}`).digest();
+  let probeKey;
+  if (addon && keyConfig) {
+    const keys = keyConfig.split(',');
+    const expectedKeys = keys.map((token) => {
+      if (!/^[a-fA-F0-9]{64}$/.test(token)) throw new Error('Invalid v2 dress key configuration');
+      return createHash('sha256').update(Buffer.from(token, 'hex')).digest('hex').slice(0, 32);
+    });
+    const actualKeys = addon.getDressResourceKeyIds?.();
+    if (JSON.stringify(actualKeys?.slice().sort()) !== JSON.stringify(expectedKeys.sort()))
+      throw new Error('Addon v2 dress keys differ from release configuration');
+    probeKey = Buffer.from(keys[0], 'hex');
+  }
+  const records = [];
   for (const part of parts) {
     const bytes = await readFile(resolve(directory, `${part}.dat`));
     const metadata = manifest.files[part];
@@ -107,13 +148,16 @@ export async function verifyDress(directory, commit, addon) {
       throw new Error('Dress artifact checksum or header mismatch');
     const cipher = createDecipheriv('aes-256-cbc', key, bytes.subarray(5, 21));
     const plain = Buffer.concat([cipher.update(bytes.subarray(21)), cipher.final()]);
-    const probe = firstRecord(brotliDecompressSync(plain, { maxOutputLength: 512 * 1024 * 1024 }));
+    const raw = brotliDecompressSync(plain, { maxOutputLength: 512 * 1024 * 1024 });
+    const probe = firstRecord(raw);
+    if (probeKey) records.push([part, Buffer.from(raw.subarray(0, 4 + raw.readUInt32BE()))]);
     if (addon) {
       const result = addon.queryDressResourceUrl(part, probe.itemId, probe.name);
       if (result?.url !== probe.url || result.size !== probe.size)
         throw new Error('Addon cannot read shared dress artifacts');
     }
   }
+  if (probeKey) await verifyV2Read(addon, records, probeKey);
   return manifest;
 }
 

@@ -57,6 +57,36 @@ test('同一套加密索引校验并逐类通过真实 addon 查询契约', asyn
   );
 });
 
+test('配置 v2 密钥时核对 native 密钥并验证三类新版索引切换', async (t) => {
+  const directory = await fixture(t);
+  const key = Buffer.alloc(32, 13);
+  const keyId = createHash('sha256').update(key).digest('hex').slice(0, 32);
+  const activated = [];
+  const addon = {
+    getDressResourceKeyIds: () => [keyId],
+    queryDressResourceUrl: () => ({ url, size: 99 }),
+    async validateDressResourceIndexes(path, identity) {
+      assert.equal(identity, keyId);
+      for (const part of parts) {
+        const bytes = await readFile(join(path, `${part}.dat`));
+        assert.equal(bytes.subarray(0, 5).toString('hex'), '4e54445202');
+        assert.equal(bytes.subarray(5, 21).toString('hex'), keyId);
+      }
+      return true;
+    },
+    async reloadDressResourceIndexes(_path, identity) {
+      activated.push(identity);
+      return true;
+    },
+  };
+  await verifyDress(directory, commit, addon, key.toString('hex'));
+  assert.deepEqual(activated, [keyId]);
+  await assert.rejects(verifyDress(directory, commit, {
+    ...addon,
+    getDressResourceKeyIds: () => [],
+  }, key.toString('hex')), /keys differ/);
+});
+
 for (const scenario of [
   'wrong-commit',
   'wrong-key',

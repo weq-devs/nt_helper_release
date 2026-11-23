@@ -262,6 +262,7 @@ jobs:
           # 仅嵌入同一 commit 派生的密钥；资源已由 dress job 加工一次。
           DRESS_KEY_SEED: ${{ needs.prepare.outputs.source_sha }}
           NT_HELPER_PACK_DRESS: '0'
+          WEQ_DRESS_KEYS: ${{ secrets.WEQ_DRESS_KEYS }}
           BUILD_TIMESTAMP: ${{ needs.prepare.outputs.build_timestamp }}
           CARGO_BUILD_TARGET: ${{ matrix.target }}
           AUTHORIZATION_OUTPUT_DIR: out
@@ -321,6 +322,7 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          WEQ_DRESS_KEYS: ${{ secrets.WEQ_DRESS_KEYS }}
         run: node .release-tools/scripts/verify-dress.mjs .dress-shared "$SOURCE_SHA" "out/${{ matrix.asset }}.node"
 
       - name: Verify helper runtime dependencies (Unix)
