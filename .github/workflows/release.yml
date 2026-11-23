@@ -18,6 +18,10 @@ on:
         description: 仅构建与验证，不创建或上传 Release
         type: boolean
         default: false
+      prerelease:
+        description: 发布测试版，不更新 Latest 或 latest.json（可与仅预检同时选择）
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -31,6 +35,15 @@ jobs:
     name: Validate public release contracts
     runs-on: ubuntu-latest
     steps:
+      - name: Require dress v2 keys for prerelease
+        if: ${{ inputs.prerelease }}
+        env:
+          WEQ_DRESS_KEYS: ${{ secrets.WEQ_DRESS_KEYS }}
+        run: |
+          if [ -z "$WEQ_DRESS_KEYS" ]; then
+            echo '::error::Configure WEQ_DRESS_KEYS before building a native prerelease.'
+            exit 1
+          fi
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -59,11 +72,15 @@ jobs:
           GH_TOKEN: ${{ secrets.NT_HELPER_TOKEN }}
           SOURCE_REF: ${{ inputs.ref }}
           PREFLIGHT_ONLY: ${{ inputs.preflight_only }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
           SOURCE_SHA=$(gh api "repos/$SOURCE_REPO/commits/$SOURCE_REF" --jq .sha)
           echo "source sha: $SOURCE_SHA"
           BASE="nt-helper-$(date -u +%Y%m%d)-$(printf '%s' "$SOURCE_SHA" | cut -c1-7)"
+          if [ "$PRERELEASE" = "true" ]; then
+            BASE="$BASE-pre"
+          fi
           TAG="$BASE"
           if gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
             TAG="$BASE-r$GITHUB_RUN_NUMBER"
@@ -402,7 +419,7 @@ jobs:
             --repo "$RELEASE_REPO" --clobber
           ls -lh out/dress-*.dat
 
-  # 补上 manifest.json / SHA256SUMS，然后把 draft 转正、更新 latest.json。
+  # 汇总并公开同一套产物；只有正式发布更新稳定入口。
   publish:
     name: Publish to nt_helper_release
     needs: [prepare, dress, build]
@@ -462,13 +479,13 @@ jobs:
             gh release delete-asset "$TAG" "authorization-$platform.json" --repo "$RELEASE_REPO" --yes
           done
 
-      # 到这里资产已齐、manifest 已校验，把 draft 转正。draft 期间发布仓里没有
-      # 真正的 tag，也不会被 WeQ 的 releases/latest 看到，所以上面任何一步挂了
-      # 都只是留下一个半成品草稿，不会污染"最新版本"。
+      # 资产与 manifest 校验通过后才公开 draft，测试版只按明确 tag 分发。
       - name: Publish release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
           cat > NOTES.md <<'EOF'
@@ -479,8 +496,14 @@ jobs:
           - 装扮离线资源 `bubble/widget/font.dat`（AES key 由本次构建 commit 派生，只与同一 tag 的 `.node` 配套）
           - `manifest.json` / `SHA256SUMS`
 
-          WeQ 侧用 `pnpm native:fetch` 取用。二进制自身带有效期，发版前记得取最新的那份。
           EOF
+          release_flags=(--latest)
+          if [ "$PRERELEASE" = "true" ]; then
+            release_flags=(--prerelease --latest=false)
+            printf '在 WeQ 开发目录中试用：`WEQ_NATIVE_MODE=release NT_HELPER_VERSION=%s pnpm dev`。\n' "$TAG" >> NOTES.md
+          else
+            printf 'WeQ 侧用 `pnpm native:fetch` 按固定版本锚取用。\n' >> NOTES.md
+          fi
           # 构建 / 过期时间直接取 manifest 里那两个字段（源头是 .node 自报的
           # getBuildInfo，天数只在 Rust 里定义一处）。
           node -e '
@@ -492,7 +515,7 @@ jobs:
           gh release edit "$TAG" \
             --repo "$RELEASE_REPO" \
             --draft=false \
-            --latest \
+            "${release_flags[@]}" \
             --notes-file NOTES.md
           echo "published https://github.com/$RELEASE_REPO/releases/tag/$TAG"
 
@@ -502,6 +525,7 @@ jobs:
       # 用 github-actions[bot] 的固定数字 id 做署名；GITHUB_TOKEN 推的提交不会
       # 触发新的 workflow，所以这里不会自己套娃。
       - name: Update latest.json on main
+        if: ${{ !inputs.prerelease }}
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |

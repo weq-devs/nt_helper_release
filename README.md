@@ -30,14 +30,28 @@ pnpm native:fetch --check  # 只比对本地与远端，不改文件
 
 中转 artifact 使用白名单，最长保留一天，工作流收尾删除本轮 artifact；不上传原始索引、密钥或私有源码。它不进入最终 Release，最终产物名称、清单格式和 WeQ 固定版本获取方式不变。失败后若中转文件已清理，应完整重跑工作流，而非只重跑失败 job。
 
-工作流变更合入后，可先运行不发布的预检：
+## 发布渠道
+
+两个仓库的 Release 入口都提供 `prerelease` 和 `preflight_only`，默认均为 `false`：
+
+- 两项都关闭：正式发布，更新 GitHub Latest 和 `latest.json`。
+- 仅开启 `prerelease`：以带 `-pre` 的独立 tag 公开完整产物，不更新 GitHub Latest 或 `latest.json`。此模式要求配置 `WEQ_DRESS_KEYS`，沿用五平台的密钥身份与新版索引读取验证。
+- 开启 `preflight_only`：只构建和验证，不创建草稿、不上传 Release 资产。也可同时开启 `prerelease`，以预检测试版的必需配置。仍使用并清理本轮加密索引中转 artifact。
+
+例如，以固定 native commit 发布测试版：
 
 ```sh
+NATIVE_COMMIT=填入私有源码的完整提交号
 gh workflow run Release --repo weq-devs/nt_helper_release \
-  -f ref=<私有 native 的完整 commit> -f preflight_only=true
+  -f ref="$NATIVE_COMMIT" -f prerelease=true
 ```
 
-此模式只构建和验证，不创建 draft、不上传 Release 资产、不更新 `latest.json`；仍使用并清理本轮加密索引中转 artifact。现有私有仓的 Release 分发入口也转发同一参数。正常发布仍需明确运行 `preflight_only=false`；本文和本地测试不代表工作流已经触发。
+只预检时再加 `-f preflight_only=true`。测试版发布后，在 WeQ 开发目录按实际 tag 试用，不需要修改版本锚或配置构建密钥：
+
+```sh
+NATIVE_TAG=填入已发布的测试版标签
+WEQ_NATIVE_MODE=release NT_HELPER_VERSION="$NATIVE_TAG" pnpm dev
+```
 
 ## 本地检查
 
