@@ -49,7 +49,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .node-version
       - run: node --test test/*.test.mjs
 
   # 先把源码 ref 解析成具体 commit，再开一个 draft release。五个 matrix job 都
@@ -131,7 +131,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .release-tools/.node-version
       - uses: dtolnay/rust-toolchain@stable
       - name: Pack and verify shared encrypted indexes
         env:
@@ -149,7 +149,7 @@ jobs:
           node .release-tools/scripts/verify-dress.mjs .dress-shared "$DRESS_KEY_SEED"
       - name: Share only encrypted indexes and provenance
         id: shared
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dress-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -206,7 +206,7 @@ jobs:
           persist-credentials: false
 
       - name: Download shared encrypted indexes from this attempt
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           artifact-ids: ${{ needs.dress.outputs.artifact_id }}
           path: .dress-shared
@@ -227,7 +227,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .release-tools/.node-version
           architecture: ${{ startsWith(matrix.target, 'aarch64-') && 'arm64' || 'x64' }}
 
       - name: Install OpenSSL (Windows)
@@ -431,10 +431,10 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .node-version
 
       - name: Download shared encrypted indexes from this attempt
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           artifact-ids: ${{ needs.dress.outputs.artifact_id }}
           path: .dress-shared
@@ -568,7 +568,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .node-version
       - name: Delete draft release
         env:
           GH_TOKEN: ${{ github.token }}
